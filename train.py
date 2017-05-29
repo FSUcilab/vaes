@@ -55,7 +55,15 @@ def train(
     # Get all the settings and save them.
     with open(results_dir + '/settings.txt', 'w') as f:
         args = inspect.getargspec(train).args
-        settings = [locals()[arg] for arg in args]
+        #print("locals= ", locals())
+        #print("args= ", args)
+        #print("locals()['image_width'] = ", locals()['image_width'])
+        #print("locals()['image_width'] = ", locals()[args[0]])
+        #for arg in args:  # ERROR SOMEWHERE
+        	#print("arg= ", arg, ",   locals= ", locals()[arg] )
+        lll = locals()  # BUG in Python 3? Cannot write: locals()[arg] in a comprehensive list. locals()['image_width'] works in a print statement
+        #settings = print("locals= ", [lll[arg] for arg in args])
+        settings = [lll[arg] for arg in args]
         for s, arg in zip(settings, args):
             setting = '{}: {}'.format(arg, s)
             f.write('{}\n'.format(setting))
@@ -83,9 +91,12 @@ def train(
     x_pred = decoder(z)
     kl_weighting = 1.0 - tf.exp(-on_epoch / kl_annealing_rate) if kl_annealing_rate is not None else 1
     monitor_functions = loss(x_pred, x, kl_weighting=kl_weighting, **z_params)
-    monitor_functions_sorted = sorted(monitor_functions.iteritems(), key=lambda x: x[0])
-    monitor_output_train = {name: [] for name in monitor_functions.iterkeys()}
-    monitor_output_valid = {name: [] for name in monitor_functions.iterkeys()}
+    #monitor_functions_sorted = sorted(monitor_functions.iteritems(), key=lambda x: x[0])  # python 2.x only
+    monitor_functions_sorted = sorted(monitor_functions.items(), key=lambda x: x[0])  #python 2 and 3
+    #monitor_output_train = {name: [] for name in monitor_functions.iterkeys()}  # python 2
+    #monitor_output_valid = {name: [] for name in monitor_functions.iterkeys()}  # python 2
+    monitor_output_train = {name: [] for name in monitor_functions}  # python 3
+    monitor_output_valid = {name: [] for name in monitor_functions}  # python 3
     monitor_function_names = [p[0] for p in monitor_functions_sorted]
     monitor_function_list = [p[1] for p in monitor_functions_sorted]
 
@@ -110,14 +121,17 @@ def train(
     # Make training and validation sets
     training_data, validation_data = dataset['train'], dataset['valid']
     n_train_batches, n_valid_batches = training_data.images.shape[0] / batch_size, validation_data.images.shape[0] / batch_size,
-    print 'Loaded training and validation data'
+    print('Loaded training and validation data')
     visualized, e_visualized = validation_data.images[:n_view], np.random.normal(0, 1, (n_view, dim_z))
 
     # Make summaries
-    rec_summary = tf.image_summary("rec", vec2im(out_op, batch_size, image_width), max_images=10)
+    #rec_summary = tf.image_summary("rec", vec2im(out_op, batch_size, image_width), max_images=10)  # tf 0.12
+    rec_summary = tf.summary.image("rec", vec2im(out_op, batch_size, image_width), max_outputs=10)  # tf 1.x
     for fn_name, fn in monitor_functions.items():
-        tf.scalar_summary(fn_name, fn)
-    summary_op = tf.merge_all_summaries()
+        #tf.scalar_summary(fn_name, fn) # python 2.x
+        tf.summary.scalar(fn_name, fn)  # python 3.x
+    #summary_op = tf.merge_all_summaries()  # python 2.x
+    summary_op = tf.summary.merge_all()   # python 3.x
 
     # Create a saver.
     saver = tf.train.Saver(tf.all_variables())
@@ -130,7 +144,8 @@ def train(
     if saved_variables is not None:
         restore.set_variables(sess, saved_variables)
 
-    summary_writer = tf.train.SummaryWriter(results_dir, sess.graph)
+    #summary_writer = tf.train.SummaryWriter(results_dir, sess.graph)  # TF 0.12
+    summary_writer = tf.summary.FileWriter(results_dir, sess.graph)   # TF 1.x
     samples_list = []
     batch_counter = 0
     best_validation_loss = 1e100
@@ -142,7 +157,8 @@ def train(
         start_time = time.time()
         l_t = 0
         monitor_output_epoch = {name: 0 for name in monitor_function_names}
-        for _ in xrange(n_train_batches):
+        #for _ in xrange(n_train_batches): #python 2.x
+        for _ in range(int(n_train_batches)):  # python 3.x
             batch_counter += 1
             feed_dict[x], feed_dict[x_w] = training_data.next_batch(batch_size, whitened=False)
             feed_dict[e] = np.random.normal(0, 1, (batch_size, dim_z))
@@ -172,7 +188,8 @@ def train(
         # Validation loop
         l_v = 0
         monitor_output_epoch = {name: 0 for name in monitor_function_names}
-        for _ in range(n_valid_batches):
+        #for _ in range(n_valid_batches):
+        for _ in range(int(n_valid_batches)): #python 3
             feed_dict[x], feed_dict[x_w] = validation_data.next_batch(batch_size, whitened=False)
             feed_dict[e] = np.random.normal(0, 1, (batch_size, dim_z))
             feed_dict[is_training] = False
@@ -256,7 +273,7 @@ def train_simple(
     loss_op = elbo_loss(x_pred, x, kl_weighting=kl_weighting, rec_err_fn=rec_err_fn, **z_params)
     out_op = x_pred
     lr = tf.Variable(learning_rate)
-    train_op = optimizer(lr).minimize(loss_op)
+    train_op = optimizer(lr).minimize(loss_op)   ## GE: why the arg loss_op which are monitoring variables defined in ELBO
 
     # Make training and validation sets
     n_train_batches = max(training_dataset.num_examples / batch_size, 1)
@@ -268,7 +285,8 @@ def train_simple(
     batch_counter = 0
     best_validation_loss = 1e100
     for epoch in range(max_epochs):
-        for _ in xrange(n_train_batches):
+        #for _ in xrange(n_train_batches): #python 2.x 
+        for _ in range(n_train_batches):  # python 3.x1
             batch_counter += 1
 
             x_ = training_dataset.next_batch(batch_size)
@@ -289,7 +307,7 @@ def train_simple(
                 if anneal_lr:
                     lr /= 2
                     learning_rate /= 2
-                    print "Annealing learning rate to {}".format(learning_rate)
+                    print("Annealing learning rate to {}".format(learning_rate))
             else: best_validation_loss = l_v
 
         if (epoch + 1) % print_every == 0:

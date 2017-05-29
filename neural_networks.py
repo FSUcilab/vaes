@@ -114,7 +114,7 @@ def cnn(input_tensor, in_shape, layer_dict, output_dims_dict, name, act=tf.nn.ta
         outputs = {}
         for key in output_dims_dict:
             outputs[key] = fc_layer(h, dim_flattened, output_dims_dict[key], layer_name=key, act=None)
-        print [outputs[k].get_shape() for k in output_dims_dict]
+        print([outputs[k].get_shape() for k in output_dims_dict])
     return outputs
 
 

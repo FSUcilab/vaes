@@ -22,7 +22,8 @@ def gaussian_log_pdf(mu, log_std, z):
     """Compute the log probability density of point z under Gaussian with mean mu and
     diagonal standard deviation exp(log_std)"""
     return tf.contrib.distributions.MultivariateNormalDiag(
-                mu=mu, diag_stdev=tf.maximum(tf.exp(log_std), 1e-15)).log_pdf(z)
+                loc=mu, scale_diag=tf.maximum(tf.exp(log_std), 1e-15)).log_prob(z)
+                #mu=mu, diag_stdev=tf.maximum(tf.exp(log_std), 1e-15)).log_pdf(z) # SHOULD NOT WORK (original code)
 
 def elbo_loss(pred, actual, var_reg=1, kl_weighting=1, rec_err_fn=cross_entropy, **kwargs):
     monitor_functions = {}

@@ -1,21 +1,38 @@
-import os
+import os, shutil
 import urllib
 import numpy as np
 
 from nn_utils import whiten
 
+# GE: necessary for Python 3
+import urllib.request
+
+#Basically:
+#urlretrieve saves the file to a temporary file and returns a tuple (filename, headers)
+#urlopen returns a Request object whose read method returns a bytestring containing the file contents
+
 
 def create_binarized_mnist(tpe, dataset_dir='data'):
-    print('Creating binarized %s dataset' % tpe)
+    print('Creating binarized %s dataset, dataset dir:  %s' % (tpe, dataset_dir))
     file_path = os.path.join(dataset_dir, 'binarized_mnist_{}.amat'.format(tpe))
+    print("file_path= ", file_path)
 
     # Download dataset if necessary
     if not os.path.isfile(file_path):
+        print("download file")
         if not os.path.exists(dataset_dir):
+            print("make dataset_dir")
             os.makedirs(dataset_dir)
         url = 'http://www.cs.toronto.edu/~larocheh/public/datasets/binarized_mnist/binarized_mnist_{}.amat'.format(tpe)
-        urllib.urlretrieve(url, file_path)
-        print('Downloaded %s to %s' % (url, file_path))
+        print("url= ", url)
+        #urllib.urlretrieve(url, file_path)  # original (does not work with Python 3.x)
+        filename, headers = urllib.request.urlretrieve(url)
+        # move from filename to file_path
+        os.system("mv %s %s" % (filename, file_path))
+        print("filename= ", filename, ",  headers= ", headers)
+        #print("return from urlretrieve: data= ", data)
+        print('*Downloaded %s to %s' % (url, file_path))
+        #return data
 
     with open(file_path) as f:
         data = [l.strip().split(' ') for l in f.readlines()]
@@ -31,6 +48,8 @@ def binarized_mnist(dataset_dir='data'):
         if not os.path.isfile(os.path.join(dataset_dir, 'binarized_mnist_{}.npy'.format(tpe))):
             create_binarized_mnist(tpe)
 
+    print("tpes= ", tpes)
+    print("dataset_dir= ", dataset_dir)
     return {tpe: UnlabelledDataSet(np.load(os.path.join(dataset_dir, 'binarized_mnist_{}.npy'.format(tpe))))
             for tpe in tpes}
 

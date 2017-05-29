@@ -20,12 +20,14 @@ def nf_encoder(neural_net, dim_z, flow, use_c=True):
 
         def norm_flow_one_step(z, u, w, b):
             temp = tf.nn.tanh(tf.reduce_sum(w * z, 1, keep_dims=True) + b)
-            z = z + tf.mul(u, temp)
+            #z = z + tf.mul(u, temp) # TF0.11
+            z = z + tf.multiply(u, temp)  # Tf1.x
 
             # Eqn. (11) and (12)
             temp = dtanh(tf.reduce_sum(w * z, 1, keep_dims=True) + b)
             psi = temp * w
-            log_detj = tf.log(tf.abs(1. + tf.reduce_sum(tf.mul(u, psi), 1)))
+            #log_detj = tf.log(tf.abs(1. + tf.reduce_sum(tf.mul(u, psi), 1)))  # TF0.11
+            log_detj = tf.log(tf.abs(1. + tf.reduce_sum(tf.multiply(u, psi), 1))) # TF 1.x
             return z, log_detj
 
         def norm_flow(z, us, ws, bs):
@@ -43,7 +45,8 @@ def nf_encoder(neural_net, dim_z, flow, use_c=True):
             #v = tf.get_variable('constant_term', shape, initializer=tf.constant_initializer(0.0), trainable=False)
             v = tf.ones_like(c)
             if use_c:
-                v = tf.concat(1, (v, c))
+                #v = tf.concat(1, (v, c)) #TF 0.11
+                v = tf.concat((v, c), 1) # TF 1.x
 
             u = fc_layer(v, dim_z, layer_name='u', act=None)
             w = fc_layer(v, dim_z, layer_name='w', act=None)
@@ -51,7 +54,7 @@ def nf_encoder(neural_net, dim_z, flow, use_c=True):
             return u, w, b
 
         def nf(z, c, use_c, flow_length):
-            z = z0
+            #z = z0  # GE: redundant. It should really be z0 = z (z0 is a global variable)
             sum_log_detj = 0.0
             for i in range(flow_length):
                 with tf.variable_scope('flow_{}'.format(i)):
@@ -153,8 +156,10 @@ def hf_encoder(neural_net, dim_z, flow):
         norm_squared_v = tf.expand_dims(tf.reduce_sum(tf.pow(v, 2), 1, keep_dims=True), 1)  # HACK
 
         I = tf.constant(np.identity(dim_z, dtype=np.float32))
-        H = I - 2 * tf.mul(tf.expand_dims(v, 1), tf.expand_dims(v, 2)) / norm_squared_v
-        return tf.reduce_sum(tf.mul(H, tf.expand_dims(z, 1)), 2)
+        #H = I - 2 * tf.mul(tf.expand_dims(v, 1), tf.expand_dims(v, 2)) / norm_squared_v #TF 0.12
+        H = I - 2 * tf.mul(tf.expand_dims(v, 1), tf.expand_dims(v, 2)) / norm_squared_v # TF 1.x
+        #return tf.reduce_sum(tf.mul(H, tf.expand_dims(z, 1)), 2)  # TF 0.12
+        return tf.reduce_sum(tf.multiply(H, tf.expand_dims(z, 1)), 2) # TF 1.x
 
     return lambda x, e: _hf_encoder(x, e, neural_net, dim_z, flow)
 
@@ -173,7 +178,8 @@ def linear_iaf_encoder(neural_net, dim_z, *args):
         L = temp + ones
         z0 = mu + tf.exp(log_std) * e
 
-        zk = tf.reduce_sum(tf.mul(L, tf.expand_dims(z0, 1)), 2)
+        #zk = tf.reduce_sum(tf.mul(L, tf.expand_dims(z0, 1)), 2)  # TF 0.11
+        zk = tf.reduce_sum(tf.multiply(L, tf.expand_dims(z0, 1)), 2) # TF 1.x
         outputs['sum_log_detj'] = 0.0
         outputs['z0'] = z0
         outputs['zk'] = zk
