@@ -30,7 +30,7 @@ def made_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
         # Eqn (8). An element is 1 when msh[k] >= d, for d in {1 ... dim_in}
         mask_in = (msh[:, np.newaxis] >= (np.tile(range(0, dim_in), [dim_out, 1]) + 1)).astype(np.float).T
         # Eqn (9). An element is 1 when d > msh[k]
-        mask_out = ((np.tile(np.arange(0, dim_in)[:, np.newaxis], [1, dim_out])+1) > msh[np.newaxis, :]).astype(np.float).T
+        mask_out = ((np.tile(np.arange(0, dim_in)[:, np.newaxis], [1, dim_out])+1) > msh[np.newaxis, :]).astype(np.float).T  # ???
         return mask_in, mask_out
 
     input_dim = input_tensor.get_shape()[-1].value
@@ -80,7 +80,6 @@ def nf_layer(input_tensor, output_dim, layer_name):
         return z, log_detj
 
 def nn(input_tensor, dims_hidden, name, act=tf.nn.relu, is_training=None):
-
     with tf.variable_scope(name):
         dim_out = dims_hidden[0]
         h = fc_layer(input_tensor, dim_out, 'layer0', act=None)

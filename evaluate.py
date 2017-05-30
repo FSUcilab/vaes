@@ -19,15 +19,21 @@ tf.reset_default_graph()
 
 # Parse model name and flow
 toks = args.checkpoint_dir.split('-')
+print(toks)
 model = toks[5]
-flow = int(toks[6]) if len(toks) > 6 else None
+try:
+	# directory name has no ending slash
+	flow = int(toks[6]) if len(toks) > 6 else None
+except:
+	# directory name has an ending slash
+	flow = int(toks[6][:-1]) if len(toks) > 6 else None
 batch_size = 100
 print('model: %s\tflow:%s' % (model, flow))
 
 # Build computation graph and operations
 if model == 'basic':
     encoder_type = basic_encoder
-if model == 'nf':
+if model == 'NF':
     encoder_type = nf_encoder
 if model == 'iaf':
     encoder_type = iaf_encoder
@@ -55,18 +61,22 @@ saver.restore(sess, ckpt.model_checkpoint_path)
 
 # HACK: assumes specific directory structure and dataset
 dataset = binarized_mnist()['test']
-n_batches = dataset.num_examples / batch_size
+#n_batches = dataset.num_examples / batch_size  # python 2
+n_batches = dataset.num_examples // batch_size   # python 3
 feed_dict = {}
-outputs = {k: [] for k in loss_ops.iterkeys()}
+#outputs = {k: [] for k in loss_ops.iterkeys()} # python 2
+outputs = {k: [] for k in loss_ops}  # python 3
 
 for _ in range(n_batches):
     feed_dict[x], feed_dict[x_w] = dataset.next_batch(batch_size, whitened=False)
     feed_dict[e] = np.random.normal(0, 1, (batch_size, dim_z))
     feed_dict[is_training] = False
     output = sess.run(loss_ops, feed_dict=feed_dict)
-    for k, v in output.iteritems():
+    #for k, v in output.iteritems():  # python 2
+    for k, v in output.items():   # python 3
         outputs[k].append(v)
 
-for k, vs in outputs.iteritems():
+#for k, vs in outputs.iteritems():  # python 2
+for k, vs in outputs.items():   # python 3
     outputs[k] = np.array(vs)
     print('avg. %s: %.3f' % (k, outputs[k].mean()))

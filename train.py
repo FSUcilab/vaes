@@ -60,7 +60,7 @@ def train(
         #print("locals()['image_width'] = ", locals()['image_width'])
         #print("locals()['image_width'] = ", locals()[args[0]])
         #for arg in args:  # ERROR SOMEWHERE
-        	#print("arg= ", arg, ",   locals= ", locals()[arg] )
+            #print("arg= ", arg, ",   locals= ", locals()[arg] )
         lll = locals()  # BUG in Python 3? Cannot write: locals()[arg] in a comprehensive list. locals()['image_width'] works in a print statement
         #settings = print("locals= ", [lll[arg] for arg in args])
         settings = [lll[arg] for arg in args]
@@ -75,19 +75,30 @@ def train(
             print(setting)
 
     # Make the neural neural_networks
+    # GE: There is also a cnn (not used)
+    # GE: change from tanh to relu or elu? 
+    # GE: nn and cnn are defined in neural_network.py
     is_training = tf.placeholder(tf.bool)
     if bn:
         encoder_net = lambda x: nn(x, enc_dims, name='encoder', act=tf.nn.tanh, is_training=is_training)
-    else:
+    else:  # no training
         encoder_net = lambda x: nn(x, enc_dims, name='encoder', act=tf.nn.tanh, is_training=None)
-    encoder = encoder_type(encoder_net, dim_z, flow)
+    # GE: returns a lambda function: 
+    #    lambda x, e: _nf_encoder(x, e, neural_net, dim_z, flow, use_c)
+    # GE: where _nf_encoder is "encoder_net"
+    # GE: encoder_net: nn, cnn, conv_net
+    # GE: encoder_type: nf_encoder, iaf_encoder, ...
+    # GE: what is flow? Number of NF layers.
+    encoder = encoder_type(encoder_net, dim_z, flow)  
 
     # Build computation graph and operations
     x = tf.placeholder(tf.float32, [None, dim_x], 'x')
     x_w = tf.placeholder(tf.float32, [None, dim_x], 'x_w')
     e = tf.placeholder(tf.float32, (None, dim_z), 'noise')
 
+
     z_params, z = encoder(x_w, e)
+
     x_pred = decoder(z)
     kl_weighting = 1.0 - tf.exp(-on_epoch / kl_annealing_rate) if kl_annealing_rate is not None else 1
     monitor_functions = loss(x_pred, x, kl_weighting=kl_weighting, **z_params)
@@ -95,37 +106,51 @@ def train(
     monitor_functions_sorted = sorted(monitor_functions.items(), key=lambda x: x[0])  #python 2 and 3
     #monitor_output_train = {name: [] for name in monitor_functions.iterkeys()}  # python 2
     #monitor_output_valid = {name: [] for name in monitor_functions.iterkeys()}  # python 2
-    monitor_output_train = {name: [] for name in monitor_functions}  # python 3
-    monitor_output_valid = {name: [] for name in monitor_functions}  # python 3
+    monitor_output_train   = {name: [] for name in monitor_functions}  # python 3
+    monitor_output_valid   = {name: [] for name in monitor_functions}  # python 3
     monitor_function_names = [p[0] for p in monitor_functions_sorted]
-    monitor_function_list = [p[1] for p in monitor_functions_sorted]
+    monitor_function_list  = [p[1] for p in monitor_functions_sorted]
+
+    for i in range(len(monitor_function_names)): print("monitor_function_names/list= {0:20s}, ".format(monitor_function_names[i]), monitor_function_list[i]); 
+    #print(monitor_functions)
 
     train_loss, valid_loss = monitor_functions['train_loss'], monitor_functions['valid_loss']
 
     out_op = x_pred
 
     # Batch normalization stuff
+    # One of the default argumetns to batch_norm: updates_collections=ops.GraphKeys.UPDATE_OPS,
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+
     if update_ops:
         updates = tf.group(*update_ops)
+        # https://stackoverflow.com/questions/43060206/what-does-control-flow-ops-with-dependencies-mean-for-tensoflow
+        # only evaluate train_loss once updates is updated
         train_loss = control_flow_ops.with_dependencies([updates], train_loss)
 
     # Optimizer with gradient clipping
     lr = tf.Variable(learning_rate)
     optimizer = optimizer(lr)
-    gvs = optimizer.compute_gradients(train_loss)
+    gvs = optimizer.compute_gradients(train_loss)  # gvs is a list of dictionaries
+    #for k in range(len(gvs)):
+        #print("k= ", gvs[k])
+
+    # https://www.tensorflow.org/api_docs/python/tf/clip_by_norm
     capped_gvs = [(tf.clip_by_norm(grad, 1), var) if grad is not None else (grad, var)
                   for grad, var in gvs]
     train_op = optimizer.apply_gradients(capped_gvs)
 
     # Make training and validation sets
     training_data, validation_data = dataset['train'], dataset['valid']
-    n_train_batches, n_valid_batches = training_data.images.shape[0] / batch_size, validation_data.images.shape[0] / batch_size,
+    n_train_batches = training_data.images.shape[0]   // batch_size,   # python 3 (// integer division)
+    n_valid_batches = validation_data.images.shape[0] // batch_size,
     print('Loaded training and validation data')
-    visualized, e_visualized = validation_data.images[:n_view], np.random.normal(0, 1, (n_view, dim_z))
+    visualized   = validation_data.images[:n_view]
+    e_visualized = np.random.normal(0, 1, (n_view, dim_z))   ## GE: ???
 
     # Make summaries
-    #rec_summary = tf.image_summary("rec", vec2im(out_op, batch_size, image_width), max_images=10)  # tf 0.12
+    # rec_summary = tf.image_summary("rec", vec2im(out_op, batch_size, image_width), max_images=10)  # tf 0.12
+    # images are 4D: batch, heigh, width, channels (gray, RGB, RGBA)
     rec_summary = tf.summary.image("rec", vec2im(out_op, batch_size, image_width), max_outputs=10)  # tf 1.x
     for fn_name, fn in monitor_functions.items():
         #tf.scalar_summary(fn_name, fn) # python 2.x
@@ -156,10 +181,10 @@ def train(
         feed_dict[on_epoch] = epoch
         start_time = time.time()
         l_t = 0
-        monitor_output_epoch = {name: 0 for name in monitor_function_names}
-        #for _ in xrange(n_train_batches): #python 2.x
-        for _ in range(int(n_train_batches)):  # python 3.x
+        monitor_output_epoch = {name: 0 for name in monitor_function_names}   # GE: ???
+        for _ in range(n_train_batches): 
             batch_counter += 1
+            # whitened: False (
             feed_dict[x], feed_dict[x_w] = training_data.next_batch(batch_size, whitened=False)
             feed_dict[e] = np.random.normal(0, 1, (batch_size, dim_z))
             feed_dict[is_training] = True
@@ -189,7 +214,7 @@ def train(
         l_v = 0
         monitor_output_epoch = {name: 0 for name in monitor_function_names}
         #for _ in range(n_valid_batches):
-        for _ in range(int(n_valid_batches)): #python 3
+        for _ in range(n_valid_batches): 
             feed_dict[x], feed_dict[x_w] = validation_data.next_batch(batch_size, whitened=False)
             feed_dict[e] = np.random.normal(0, 1, (batch_size, dim_z))
             feed_dict[is_training] = False
@@ -242,84 +267,6 @@ def train(
     sess.close()
 
 
-def train_simple(
-        dim_x,
-        dim_z,
-        encoder,
-        decoder,
-        training_dataset,
-        validation_dataset=None,
-        learning_rate=0.0001,
-        optimizer=tf.train.AdamOptimizer,
-        batch_size=100,
-        max_epochs=10,
-        **kwargs):
-    print_every = kwargs.pop('print_every', 10)
-    # Set random seeds
-    seed = kwargs.pop('seed', 0)
-    np.random.seed(seed)
-    tf.set_random_seed(seed)
-
-    rec_err_fn = l2_loss if kwargs.pop('rec_err_type', '') == 'l2_loss' else cross_entropy
-    anneal_lr = kwargs.pop('anneal_lr', False)
-
-    # Build computation graph and operations
-    x = tf.placeholder(tf.float32, [None, dim_x], 'x')
-    e = tf.placeholder(tf.float32, (None, dim_z), 'noise')
-    z_params, z = encoder(x, e)
-    x_pred = decoder(z)
-
-    kl_weighting = 1
-    loss_op = elbo_loss(x_pred, x, kl_weighting=kl_weighting, rec_err_fn=rec_err_fn, **z_params)
-    out_op = x_pred
-    lr = tf.Variable(learning_rate)
-    train_op = optimizer(lr).minimize(loss_op)   ## GE: why the arg loss_op which are monitoring variables defined in ELBO
-
-    # Make training and validation sets
-    n_train_batches = max(training_dataset.num_examples / batch_size, 1)
-    n_valid_batches = validation_dataset.num_examples / batch_size if validation_dataset is not None else 0
-
-    # Create a session
-    sess = tf.InteractiveSession()
-    sess.run(tf.initialize_all_variables())
-    batch_counter = 0
-    best_validation_loss = 1e100
-    for epoch in range(max_epochs):
-        #for _ in xrange(n_train_batches): #python 2.x 
-        for _ in range(n_train_batches):  # python 3.x1
-            batch_counter += 1
-
-            x_ = training_dataset.next_batch(batch_size)
-            e_ = np.random.normal(0, 1, (x_.shape[0], dim_z))
-            feed_dict = {x: x_, e: e_}
-            _, l = sess.run([train_op, loss_op], feed_dict)
-
-        l_v = 0.0
-        if validation_dataset is not None:
-            for _ in range(n_valid_batches):
-                x_valid = validation_dataset.next_batch(batch_size)
-                e_valid = np.random.normal(0, 1, (batch_size, dim_z))
-                l_v_batched = sess.run(loss_op, feed_dict={x: x_valid, e: e_valid})
-                l_v += l_v_batched
-            l_v /= n_valid_batches
-
-            if l_v > best_validation_loss:
-                if anneal_lr:
-                    lr /= 2
-                    learning_rate /= 2
-                    print("Annealing learning rate to {}".format(learning_rate))
-            else: best_validation_loss = l_v
-
-        if (epoch + 1) % print_every == 0:
-            print('Epoch: {:d}\t Training loss: {:.2f}'.format(epoch+1, l))
-
-    ops = {
-        'z': z,
-        'out': out_op,
-        'x': x,
-        'e': e
-    }
-    return ops, sess
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
